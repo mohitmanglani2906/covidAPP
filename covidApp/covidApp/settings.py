@@ -41,8 +41,10 @@ INSTALLED_APPS = [
 
     'rest_framework',
     'rest_framework_mongoengine',
+    'background_task',
     'signup.apps.SignupConfig',
-    'covidAPI.apps.CovidapiConfig'
+    'covidAPI.apps.CovidapiConfig',
+
 ]
 
 MIDDLEWARE = [
