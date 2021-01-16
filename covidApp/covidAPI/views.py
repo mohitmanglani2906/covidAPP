@@ -1,15 +1,62 @@
-from django.shortcuts import render
 from rest_framework.views import APIView
 from rest_framework.response import Response
-import requests,json, datetime
+import requests, datetime
 from datetime import timedelta
 import plotly.graph_objects as go
-import base64
+import base64, json
 from .utils import sendCovidData
+from signup.models import UserToken, Account
 
-class FetchCovidData(APIView):
+class AuthenticateFetchCovidData(APIView):
+
+    currentUser = None
+    userExists = False
+
+    def processGET(self, request):
+        pass
+
+    def processPOST(self, request):
+        pass
+
+    def checkUserExistsWithToken(self, token):
+        print("Token____ %s",token)
+        userToken = None
+        try:
+            userToken =  UserToken.objects.get(token=token)
+        except:
+            userToken = None
+        if userToken and userToken.userEmail:
+            return True, userToken.userEmail
+        return False, None
+
+    def checkUserAuthentication(self):
+        userExistsWithToken = False
+
+        if self.request.headers and "Authorization" in self.request.headers and self.request.headers["Authorization"]:
+            token = self.request.headers["Authorization"].replace("Bearer ", "")
+            self.userExists, self.currentUser = self.checkUserExistsWithToken(token)
 
     def get(self, request):
+
+        self.checkUserAuthentication()
+
+        if self.userExists and self.currentUser:
+            return Response(json.loads(self.processGET(request)))
+        else:
+            return  Response({"success": False, "message": "You are't authenticated!"})
+
+    def post(self, request):
+
+        self.checkUserAuthentication()
+
+        if self.userExists and self.currentUser:
+            return Response(json.loads(self.processPOST(request)))
+        else:
+            return Response({"success": False, "message": "You are't authenticated!"})
+
+class FetchCovidData(AuthenticateFetchCovidData):
+
+    def processGET(self, request):
         country = request.GET.get('country', None)
         startDate = request.GET.get('startDate', None)
         endDate = request.GET.get('endDate', None)
@@ -19,37 +66,45 @@ class FetchCovidData(APIView):
                 endDate = datetime.datetime.strftime(datetime.datetime.now(), '%d-%m-%Y')
                 startDate = datetime.datetime.strftime(datetime.datetime.now() + timedelta(days=-14), '%d-%m-%Y')
             if not country:
-                country = "Brazil"
+                currentUser = self.currentUser
+                try:
+                    userObject = Account.objects.get(userEmail=currentUser)
+                    if userObject and userObject.country:
+                        country = userObject.country
+                except:
+                    userObject = None
+                    return json.dumps({"success": False, "data": {}, "message": "Something went wrong."})
+
             startDateObj = datetime.datetime.strptime(startDate, '%d-%m-%Y').date()
             endDateObj = datetime.datetime.strptime(endDate, '%d-%m-%Y').date()
-            print(startDateObj)
-            print(endDateObj)
+
             generalResponse = json.loads(requests.get("https://corona-api.com/countries?include=timeline").content)
             countrySpecifiedJSON = {}
             newTimeLineJson = []
-            for GR in generalResponse["data"]:
-                if "name" in GR and GR["name"] and GR["name"] == country:
-                    countrySpecifiedJSON = GR
-                    for countryKey, countryValue in countrySpecifiedJSON.items():
-                        print("__Keys___ %s", countryKey)
-                        if countryKey == "timeline" and countryValue:
-                            for time in countryValue:
-                                for timeKey, timeValue in time.items():
-                                    if timeKey == "date" and timeValue:
-                                        if datetime.datetime.strptime(timeValue,'%Y-%m-%d').date() >= startDateObj and datetime.datetime.strptime(timeValue, '%Y-%m-%d').date() <= endDateObj:
-                                            newTimeLineJson.append(time)
-                    if newTimeLineJson:
-                        countrySpecifiedJSON["timeline"] = newTimeLineJson
-                    else:
-                        countrySpecifiedJSON["timeline"] = []
-            print("____________________________++++++++++++++++++++++++++++++++++++++++++++++++_________________________%s",countrySpecifiedJSON)
-            return Response({"success": True, "data": countrySpecifiedJSON})
+            if generalResponse and "data" in generalResponse:
+                for GR in generalResponse["data"]:
+                    if "name" in GR and GR["name"] and GR["name"] == country:
+                        countrySpecifiedJSON = GR
+                        for countryKey, countryValue in countrySpecifiedJSON.items():
+                            print("__Keys___ %s", countryKey)
+                            if countryKey == "timeline" and countryValue:
+                                for time in countryValue:
+                                    for timeKey, timeValue in time.items():
+                                        if timeKey == "date" and timeValue:
+                                            if datetime.datetime.strptime(timeValue,'%Y-%m-%d').date() >= startDateObj and datetime.datetime.strptime(timeValue, '%Y-%m-%d').date() <= endDateObj:
+                                                newTimeLineJson.append(time)
+                        if newTimeLineJson:
+                            countrySpecifiedJSON["timeline"] = newTimeLineJson
+                        else:
+                            countrySpecifiedJSON["timeline"] = []
+
+            return json.dumps({"success": True, "data": countrySpecifiedJSON})
 
         except Exception as e:
             print(e)
-            return Response({"success": False, "data": {}, "message":"Something went wrong."})
+            return json.dumps({"success": False, "data": {}, "message": "Something went wrong."})
 
-    def post(self, request):
+    def processPOST(self, request):
 
         try:
             generalResponse = json.loads(requests.get("https://corona-api.com/countries").content)
@@ -71,10 +126,10 @@ class FetchCovidData(APIView):
                 go.Bar(name="Cases per million population", x = countries, y=calculatedData)
             ])
             fig.update_layout(title_text='Covid19 API Data')
-            sendCovidData("16itmohit.manglani@gmail.com", base64.b64encode(fig.to_image(format="png")).decode())
+            sendCovidData(self.currentUser, base64.b64encode(fig.to_image(format="png")).decode())
 
-            return Response({"success": True, "message": "Image exported successfully"})
+            return json.dumps({"success": True, "message": "Image exported successfully"})
 
         except Exception as e:
             print(e)
-            return Response({"success": False, "message": "Image not exported successfully"})
+            return json.dumps({"success": False, "message": "Image not exported successfully"})

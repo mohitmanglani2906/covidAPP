@@ -7,7 +7,7 @@ from datetime import datetime
 
 @background(schedule=60)
 def sendCovidData(toEmail, image):
-
+    print("Send Covid Called")
     subject = 'COVID19 API Bar Chart dated ' + datetime.strftime(datetime.now(), '%d-%m-%Y')
     body = '<strong>Please Find below bar chart. Bar chart is being created using https://corona-api.com API.</strong>'
     fileName = 'covid19 ' + datetime.strftime(datetime.now(), '%d-%m-%Y') + '.png'
